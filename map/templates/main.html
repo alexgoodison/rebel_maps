@@ -8,6 +8,7 @@
   <link href='https://api.mapbox.com/mapbox-gl-js/v2.13.0/mapbox-gl.css' rel='stylesheet' />
   <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.min.js"></script>
   <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.css" type="text/css">
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.3/jquery.min.js"></script>
 
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800;900&display=swap');
@@ -20,6 +21,7 @@
       margin: 0;
       height: 100vh;
       position: relative;
+      overflow-x: hidden;
     }
 
     #map {
@@ -55,7 +57,7 @@
     }
 
     #journeyDetails.hidden {
-      display: none;
+      visibility: hidden;
     }
 
     .text-sm {
@@ -89,7 +91,7 @@
 <body>
   <div id="map"></div>
 
-  <div id="journeyDetails" class="hidden">
+  <form id="journeyDetails" class="hidden">
     <div>
       <div class="text-sm">Start</div>
       <div id="startLocationName" class="text-base"></div>
@@ -103,35 +105,59 @@
     <button onclick="clearSearch()" type="button" id="clearButton">
       Clear Search
     </button>
-  </div>
+  </form>
 
   <div id="geocoder"></div>
   
 
   <script defer>
     sourceLocation = null;
+    sourceMarker = null;
+
     targetLocation = null;
+    targetMarker = null
 
     // Handle input
     function processGeocoderInput() {
       if (sourceLocation === null) {
         document.getElementById("journeyDetails").classList.add("hidden");
+        document.querySelector('#geocoder input').placeholder = "Enter starting location";
         return
       }
 
       document.getElementById("journeyDetails").classList.remove("hidden");
+      document.querySelector('#geocoder input').placeholder = "Enter destination";
       
       if (targetLocation === null) {
         document.getElementById("startLocationName").innerText = sourceLocation.name;
+        document.getElementById("targetLocationName").innerText = '';
+        sourceMarker = new mapboxgl.Marker()
+          .setLngLat([sourceLocation.longitude, sourceLocation.latitude])
+          .addTo(map);
         
       } else {
         document.getElementById("targetLocationName").innerText = targetLocation.name;
+        findRoute();
       }
     }
 
     function clearSearch() {
       sourceLocation = null;
       targetLocation = null;
+      
+      if (sourceMarker) {
+        sourceMarker.remove();
+        sourceMarker = null;
+      }
+
+      if (targetMarker) {
+        targetMarker.remove();
+        targetMarker = null;
+      }
+
+      map.removeLayer('route');
+      map.removeSource('route');
+
       processGeocoderInput()
     }
 
@@ -147,12 +173,17 @@
     const geocoder = new MapboxGeocoder({
       accessToken: mapboxgl.accessToken,
       mapboxgl: mapboxgl,
-      bbox: [-8.650958731059884, 51.97062233057636, -8.303890722687484, 51.823919121836425],
-      placeholder: 'Enter your starting location'
+      bbox: [-8.650958731059884, 51.823919121836425, -8.303890722687484, 51.97062233057636],
+      placeholder: 'Enter starting location'
     });
 
     geocoder.on('result', ({ result }) => {
       geocoder.clear()
+      if (sourceLocation && targetLocation) {
+        // Both locations are already chosen
+        clearSearch();
+      }
+
       let coordinates = result.center;
       let name = result.text;
 
@@ -162,6 +193,7 @@
           longitude: coordinates[0],
           name
         }
+
       } else if (targetLocation === null) {
         targetLocation = {
           latitude: coordinates[1],
@@ -175,6 +207,85 @@
       
     document.getElementById('geocoder').appendChild(geocoder.onAdd(map));
     map.addControl(new mapboxgl.NavigationControl());
+
+    // Route finder
+    function findRoute() {
+      geocoder.clear(); 
+
+      targetMarker = new mapboxgl.Marker()
+        .setLngLat([targetLocation.longitude, targetLocation.latitude])
+        .addTo(map);
+
+      let data = {
+        source: sourceLocation,
+        target: targetLocation
+      };
+
+      let northEastCorner = [
+        Math.max(targetLocation.longitude, sourceLocation.longitude),
+        Math.max(targetLocation.latitude, sourceLocation.latitude),
+      ];
+
+      let southWestCorner = [
+        Math.min(targetLocation.longitude, sourceLocation.longitude),
+        Math.min(targetLocation.latitude, sourceLocation.latitude),
+      ];
+
+      let dLong = northEastCorner[0] - southWestCorner[0];
+      dLong = dLong * 0.1;
+      northEastCorner[0] += dLong;
+      southWestCorner[0] -= dLong;
+
+      let dLat = northEastCorner[1] - southWestCorner[1];
+      dLat = dLat * 0.1;
+      northEastCorner[1] += dLat;
+      southWestCorner[1] -= dLat;
+
+      map.fitBounds([
+        northEastCorner, southWestCorner
+      ])
+
+      $.ajax({
+        type: 'POST',
+        url: '/calculate_route',
+        contentType: 'application/json; charset=utf-8',
+        processData: false, 
+        data: JSON.stringify(data),
+        success: response => {
+          let { route } = response;
+          route = route.map(({ latitude, longitude }) => [longitude, latitude]);
+
+          map.addSource('route', {
+            'type': 'geojson',
+            'data': {
+              'type': 'Feature',
+              'properties': {},
+              'geometry': {
+                'type': 'LineString',
+                'coordinates': route
+              }
+            } 
+          });
+
+          map.addLayer({
+            'id': 'route',
+            'type': 'line',
+            'source': 'route',
+            'layout': {
+              'line-join': 'round',
+              'line-cap': 'round'
+            },
+            'paint': {
+              'line-color': '#33C9EB',
+              'line-width': 4
+            }
+          });
+        },
+        error: response => {
+          console.log("Error: ", response);
+        }
+      })
+    }
   </script>
 </body>
 </html>
