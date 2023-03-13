@@ -52,3 +52,5 @@ docs/_build/
 # Additional
 db.sqlite3
 .env
+
+.DS_Store
