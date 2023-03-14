@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Rebel Maps</title>
+
+  <script src='https://api.mapbox.com/mapbox-gl-js/v2.13.0/mapbox-gl.js'></script>
+  <link href='https://api.mapbox.com/mapbox-gl-js/v2.13.0/mapbox-gl.css' rel='stylesheet' />
+  <script src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.min.js"></script>
+  <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.css" type="text/css">
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.3/jquery.min.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700;800;900&display=swap');
+
+    html, body, * {
+      font-family: 'Golos Text', sans-serif;
+    }
+
+    body {
+      margin: 0;
+      height: 100vh;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    #map {
+      height: 100vh;
+      width: 100vw;
+      position: absolute;
+      z-index: 1;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="map"></div>
+
+  {{ data|json_script:"data" }}
+  <script defer type="text/javascript">
+    // Load in vertices & edges (passed through from Python in context)
+    const data = JSON.parse(document.getElementById('data').textContent);
+    let vertices = data.vertices.map(v => {
+      return {
+        'type': 'Feature',
+        'properties': {},
+        'geometry': {
+          'type': 'Point',
+          'coordinates': v
+        }
+      }
+    });
+
+    let edges = data.edges.map(e => {
+      return {
+        'type': 'Feature',
+        'properties': {},
+        'geometry': {
+          'type': 'LineString',
+          'coordinates': [
+            e.from,
+            e.to
+          ]
+        }
+      }
+    })
+
+    // Setup Map
+    mapboxgl.accessToken = 'INSERT_MAPBOX_KEY';
+    const map = new mapboxgl.Map({
+      container: 'map',
+      style: 'mapbox://styles/mapbox/streets-v12',
+      center: [-8.4656, 51.8885],
+      zoom: 12.2,
+    });
+
+    map.on('load', () => {
+      // Source and layer for EDGES
+      map.addSource('edges', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: edges
+        }
+      });
+
+      map.addLayer({
+        'id': 'edges',
+        'type': 'line',
+        'source': 'edges',
+        'layout': {
+          'line-join': 'round',
+          'line-cap': 'round'
+        },
+        'paint': {
+          'line-color': '#06b6d4',
+          'line-width': 2,
+        }
+      });
+
+      // Source and layer for VERTICES
+      map.addSource('vertices', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: vertices
+        }
+      })
+
+      map.addLayer({
+        'id': 'vertices',
+        'type': 'circle',
+        'source': 'vertices',
+        'paint': {
+          'circle-color': '#ec4899',
+          'circle-radius': 3.5,
+          'circle-stroke-width': 1.5,
+          'circle-stroke-color': '#fff'
+        }
+      });
+    })
+  </script>
+</body>
+</html>
